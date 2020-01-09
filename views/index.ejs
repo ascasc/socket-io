@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title><%= title %></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+</head>
+<style>
+    body{
+        margin-top: 20px;
+    }
+    #messageArea{
+        display: none;
+    }
+    #chat{
+        height: 500px;
+        border: 1px solid #f5f5f5;
+        border-radius: 10px;
+        overflow: auto;
+    }
+    .well{
+        position: relative;
+        border-radius: 10px;
+    }
+    #message{
+        display: block;
+        height: 40px;
+    }
+    .form-group{
+        margin-top: 30px;
+    }
+    .well span{
+        word-wrap:break-word;
+    }
+    #menu-btn{
+        position: absolute;
+        top: 0;
+        right: 0;
+    }
+    #msg{
+        width: 100%;
+        height: auto;
+        resize: none;
+    }
+</style>
+<script>
+    $(document).ready(function(){
+        const socket = io.connect();
+        const $messageForm = $('#messageForm');
+        const $message = $('#message');
+        const $chat = $('#chat');
+
+        const $messageArea = $('#messageArea');
+        const $usernameArea = $('#usernameArea');
+        const $usernameForm = $('#usernameForm');
+        const $username = $('#username');
+        const $users = $('#users');
+
+
+        var OnOff_hover =true;
+        var OnOff_btneditmeg =true;
+        socket.on('read message', (data)=>{//讀取資料庫的訊息記錄
+            let html ='';
+            $chat.html('');
+            
+            $chat.append(forhtml(data));
+            $chat[0].scrollTop = $chat[0].scrollHeight;
+        });
+
+        socket.on('new message', (data)=>{//伺服器傳送過來的訊息
+            let html ='';
+            html += `<div class="well ${data.id}" id="well" data-id="${data.id}" data-username="${data.user}"><span><strong>${data.user}</strong>: <p>${data.msg}</p></span><div id="menu-btn"></div><form id="form-edit"></form></div>`;
+            $chat.append(html);
+            $chat[0].scrollTop = $chat[0].scrollHeight;
+        });
+
+        
+        socket.on('get users', (data)=>{//伺服器傳過來的所有username名單
+            
+            $users.html('');
+            $users.append(foruserlist(data));
+        });
+        socket.on('new delete message', (data)=>{//伺服器傳過來刪除的訊息
+            $chat.children('.'+data).remove();
+        });
+
+        socket.on('new update message', (data)=>{
+            let p =$chat.children('.'+data.id).find('span p');
+            p.text(data.message);
+        });
+
+
+        $messageForm.submit((e)=>{//送出訊息
+            e.preventDefault();
+            if($message.val()==0) return false;
+            socket.emit('send message', $message.val());
+            $message.val('');
+        });
+        $usernameForm.submit((e)=>{//註冊username
+            e.preventDefault();
+            if($username.val() ==0){
+                alert('註冊名稱不可為空。');
+                return false;
+            } 
+            socket.emit('new user', $username.val(), (data)=>{
+                if(!data){
+                    alert('此名稱已被註冊。')
+                    return false; 
+                } 
+                $usernameArea.hide();
+                $messageArea.show();
+            });
+            $username.val('')
+        });
+
+        $chat
+        .on('mouseenter', '#well',(e)=>{//hover出現Menu狀態
+            e.preventDefault();
+            let html = '<button class="btn btn-success btn-sm" id="btn-edit-meg">Edit</button><button class="btn btn-danger btn-sm" id="btn-delete-meg">Delete</button>';
+            let menu_btn = $(e.target).find('#menu-btn');
+            if(OnOff_btneditmeg && OnOff_hover){
+                menu_btn.append(html);
+                OnOff_hover =false;
+            }
+
+        })
+        .on('mouseleave', '#well', (e)=>{//hover離開
+            e.preventDefault();
+            let well = $(e.target).closest('#well');
+            if(!OnOff_hover){
+                well.find('#menu-btn').html('');
+                OnOff_hover = true;
+            }
+        });;
+        $('#chat')
+        .on('click', '#btn-edit-meg',(e)=>{//編輯按鈕
+            e.preventDefault();
+            let html = '<textarea type="text" id="msg"></textarea><input type="submit" value="Send Edit" id="sendedit" class="btn btn-primary btn-sm"><button id="cancel" class="btn btn-link">cancel</button>';
+            let well =$(e.target).closest('#well');
+            let formedit = well.find('#form-edit');
+            let span = well.find('span');
+            let menubtn=well.find('#menu-btn');
+
+            menubtn.html('');
+            span.hide();
+            formedit.append(html);
+            formedit.find('#msg').text(span.find('p').text());
+            formedit.find('#msg')[0].scrollTop =formedit.find('#msg')[0].scrollHeight;
+            OnOff_btneditmeg =false;
+        })
+        .on('click', '#btn-delete-meg',(e)=>{//刪除按鈕
+            let well =$(e.target).closest('#well');
+            let data={
+                id: well.data('id'),
+                username: well.data('username'),
+                message: well.find('span p').text()
+            };
+            let button = confirm('確定刪除嗎？');
+            socket.emit('delete message', data, (boolean)=>{       
+                if(!boolean) alert('使用者無此權限刪除這段訊息，只能刪除自己所送出的訊息。');
+            });
+            OnOff_btneditmeg =true;
+        })
+        .on('click', '#cancel', (e)=>{//取消Menu狀態
+            e.preventDefault();
+            let well = $(e.target).closest('#well');
+            let span =well.find('span');
+            let formedit =well.find('#form-edit');
+
+            span.show();
+            formedit.html('');
+            OnOff_btneditmeg =true;
+        })
+        .on('submit', '#form-edit', (e)=>{//編輯表單送出
+            e.preventDefault();
+            let formedit =$(e.target);
+            let well = formedit.closest('#well');
+            let span = well.find('span');
+            let msg = formedit.find('#msg');
+            let p = span.find('p');
+
+            let data={
+                id: well.data('id'),
+                username: well.data('username'),
+                message: msg.val()
+            };
+            socket.emit('update message', data, (boolean)=>{
+                if(!boolean){
+                    alert('使用者無此權限修改這段訊息，只能修改自己所送出的訊息。')
+                    console.log('de');
+                    return false;
+                }
+                p.text(msg.val());
+                span.show();
+                formedit.html('');
+                OnOff_btneditmeg =true;
+            });
+        });
+        function forhtml(data){
+            let html='';
+            for(i=0;i<data.length; i++){
+                html += `<div class="well ${data[i].id}" id="well" data-id="${data[i].id}" data-username="${data[i].username}"><span><strong>${data[i].username}</strong>: <p>${data[i].message}</p></span><div id="menu-btn"></div><form id="form-edit"></form></div>`;
+            }
+            return html;
+        }
+        function foruserlist(data){
+            let html ='';
+            for(i=0; i<data.length; i++){
+                html += `<li class="list-group-item">${data[i]}</li>`;
+            }
+            return html;
+        }
+    });
+</script>
+<body>
+    <div class="container">
+        <div class="row" id="usernameArea">
+            <div class="col-md-12">
+                <form id="usernameForm">
+                    <div class="form-group">
+                        <label>Enter Username</label>
+                        <input id="username" class="form-control"/>
+                        <br/>
+                        <input type="submit" value="login" class="btn btn-primary">
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="row" id="messageArea">
+            <div class="col-md-4">
+                <div class="well">
+                    <h3>Online Users</h3>
+                    <ul class="list-group" id="users"></ul>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <div class="chat" id="chat"></div>
+                <form id="messageForm">
+                    <div class="form-group">
+                        <label>Enter Message</label>
+                        <input id="message" class="form-control">
+
+                        <br/>
+                        <input type="submit" value="send Message" class="btn btn-primary">
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+</body>
+</html>
